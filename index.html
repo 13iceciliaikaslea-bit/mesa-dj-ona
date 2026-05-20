@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulldozer Simulator: Ultra Realist Edition</title>
+    <style>
+        :root {
+            --yellow: #ffcc00;
+            --green: #44ff44;
+            --dark: #0a0a0a;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+        }
+
+        /* Panel de Control UI */
+        #ui {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 25px;
+            border-radius: 12px;
+            border-left: 6px solid var(--yellow);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.7);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .money {
+            color: var(--green);
+            font-size: 38px;
+            font-weight: 900;
+            margin-bottom: 10px;
+            text-shadow: 0 0 15px rgba(68, 255, 68, 0.4);
+        }
+
+        .stat {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin: 4px 0;
+            opacity: 0.9;
+        }
+
+        .model-badge {
+            display: inline-block;
+            background: var(--yellow);
+            color: #000;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: 800;
+            margin-top: 15px;
+            font-size: 12px;
+        }
+
+        /* Tienda / Concesionario */
+        #shop {
+            position: absolute;
+            top: 25px;
+            right: 25px;
+            bottom: 25px;
+            background: rgba(10, 10, 10, 0.96);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            width: 320px;
+            border: 1px solid #333;
+            z-index: 10;
+            overflow-y: auto;
+            box-shadow: -15px 0 45px rgba(0,0,0,0.6);
+        }
+
+        #shop h2 {
+            text-align: center;
+            color: var(--yellow);
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-bottom: 20px;
+            font-size: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 15px;
+        }
+
+        .vehicle-card {
+            background: #181818;
+            margin-bottom: 15px;
+            padding: 18px;
+            border-radius: 10px;
+            border: 1px solid #252525;
+            transition: 0.3s cubic-bezier(0.2, 1, 0.3, 1);
+        }
+
+        .vehicle-card:hover {
+            border-color: var(--yellow);
+            background: #202020;
+            transform: translateY(-5px);
+        }
+
+        .vehicle-card h4 { margin: 0; font-size: 18px; color: var(--yellow); }
+        .vehicle-card p { font-size: 12px; color: #999; margin: 10px 0; line-height: 1.5; }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--yellow);
+            border: none;
+            font-weight: 800;
+            cursor: pointer;
+            border-radius: 6px;
+            color: #000;
+            transition: 0.2s;
+        }
+
+        button:hover:not(:disabled) { background: #fff; transform: scale(1.02); }
+        button:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .owned { background: var(--green) !important; }
+
+        #msg {
+            position: absolute;
+            bottom: 50px;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            font-size: 24px;
+            font-weight: 800;
+            text-shadow: 0 5px 20px rgba(0,0,0,1);
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: var(--yellow); border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <div class="money">$ <span id="cash">0</span></div>
+        <div class="stat">📦 CARGA: <span id="cargo">0</span> / <span id="maxCargo">10</span></div>
+        <div class="stat">🪵 MADERA: <span id="w">0</span></div>
+        <div class="stat">🪨 PIEDRA: <span id="s">0</span></div>
+        <div id="modelName" class="model-badge">Caterpillar D3</div>
+    </div>
+
+    <div id="shop">
+        <h2>Dealer Fleet</h2>
+        <div id="catalog"></div>
+    </div>
+
+    <div id="msg">Entra en la caseta para cobrar</div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- MOTOR DE RENDER ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2500);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        document.body.appendChild(renderer.domElement);
+
+        // --- ILUMINACIÓN Y AMBIENTE ---
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 60, 450);
+
+        const ambient = new THREE.HemisphereLight(0xffffff, 0x44ff44, 0.6);
+        scene.add(ambient);
+
+        const sun = new THREE.DirectionalLight(0xffffff, 2.0);
+        sun.position.set(80, 150, 80);
+        sun.castShadow = true;
+        sun.shadow.camera.left = -250; sun.shadow.camera.right = 250;
+        sun.shadow.camera.top = 250; sun.shadow.camera.bottom = -250;
+        sun.shadow.mapSize.set(2048, 2048);
+        scene.add(sun);
+
+        // --- SUELO (HIERBA PROCEDURAL) ---
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        for(let i=0; i<40000; i++){
+            ctx.fillStyle = `hsl(${60 + Math.random()*40}, ${30 + Math.random()*30}%, ${15 + Math.random()*25}%)`;
+            ctx.fillRect(Math.random()*512, Math.random()*512, 2, 2);
+        }
+        const groundTex = new THREE.CanvasTexture(canvas);
+        groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+        groundTex.repeat.set(120, 120);
+
+        const floor = new THREE.Mesh(
+            new THREE.PlaneGeometry(1200, 1200),
+            new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // --- CASETA DE TRABAJO (CENTRO DE COBRO) ---
+        const workshop = new THREE.Group();
+        workshop.position.set(-100, 0, -100);
+       
+        // Base de cemento
+        const base = new THREE.Mesh(new THREE.BoxGeometry(20, 0.5, 20), new THREE.MeshStandardMaterial({color: 0x555555}));
+        base.receiveShadow = true;
+        workshop.add(base);
+
+        // Puertas/Paredes en los 4 lados
+        const wallMat = new THREE.MeshStandardMaterial({color: 0xcccccc, side: THREE.DoubleSide});
+        for(let i=0; i<4; i++){
+            const wallGroup = new THREE.Group();
+            const p1 = new THREE.Mesh(new THREE.BoxGeometry(6.5, 8, 0.5), wallMat);
+            p1.position.set(-6.5, 4, 10);
+            const p2 = p1.clone();
+            p2.position.set(6.5, 4, 10);
+            wallGroup.add(p1, p2);
+            wallGroup.rotation.y = (Math.PI/2) * i;
+            workshop.add(wallGroup);
+        }
+
+        // Techo Metálico
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(22, 0.8, 22), new THREE.MeshStandardMaterial({color: 0x224488, metalness: 0.6}));
+        roof.position.y = 8.4;
+        workshop.add(roof);
+
+        // Decoración interior (Mesa de herramientas)
+        const desk = new THREE.Mesh(new THREE.BoxGeometry(6, 3, 2), new THREE.MeshStandardMaterial({color: 0x332211}));
+        desk.position.set(0, 1.5, 0);
+        workshop.add(desk);
+
+        scene.add(workshop);
+
+        // --- FLOTA DE BULLDOZERS ---
+        const VEHICLES = [
+            { name: "Caterpillar D3", speed: 0.18, cargo: 12, color: 0xffcc00, price: 0, scale: 1 },
+            { name: "Caterpillar D7", speed: 0.22, cargo: 45, color: 0xffbb00, price: 1500, scale: 1.5 },
+            { name: "Komatsu D155", speed: 0.26, cargo: 120, color: 0xffd700, price: 5000, scale: 2.1 },
+            { name: "Caterpillar D11", speed: 0.31, cargo: 300, color: 0xffaa00, price: 12000, scale: 2.8 },
+            { name: "Komatsu D575A", speed: 0.38, cargo: 750, color: 0xff8800, price: 30000, scale: 3.8 }
+        ];
+
+        let currentIdx = 0;
+        let vehicle = new THREE.Group();
+        scene.add(vehicle);
+        let particles = [];
+
+        function buildVehicle(idx) {
+            while(vehicle.children.length > 0) vehicle.remove(vehicle.children[0]);
+            const config = VEHICLES[idx];
+            const s = config.scale;
+
+            const bodyMat = new THREE.MeshStandardMaterial({color: config.color, roughness: 0.3, metalness: 0.5});
+            const metalMat = new THREE.MeshStandardMaterial({color: 0x2a2a2a, roughness: 0.8, metalness: 0.9});
+
+            // Orugas (Tracks)
+            for(let side of [-1.3, 1.3]){
+                const track = new THREE.Mesh(new THREE.BoxGeometry(0.8*s, 1.1*s, 4.2*s), metalMat);
+                track.position.set(side*s, 0.55*s, 0);
+                track.castShadow = true;
+                vehicle.add(track);
+               
+                // Rodillos decorativos
+                for(let r=-1.5; r<=1.5; r+=0.7){
+                    const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.3*s, 0.3*s, 0.9*s), metalMat);
+                    roller.rotation.z = Math.PI/2;
+                    roller.position.set(side*s, 0.3*s, r*s);
+                    vehicle.add(roller);
+                }
+            }
+
+            // Chasis Principal
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2.5*s, 1.5*s, 3.5*s), bodyMat);
+            body.position.y = 1.3*s;
+            body.castShadow = true;
+            vehicle.add(body);
+
+            // Cabina (Cristal Oscuro)
+            const cab = new THREE.Mesh(new THREE.BoxGeometry(1.6*s, 1.3*s, 1.6*s), new THREE.MeshStandardMaterial({color: 0x0a0a0a, roughness: 0, metalness: 1}));
+            cab.position.set(0, 2.7*s, -0.5*s);
+            vehicle.add(cab);
+
+            // Pala (Blade)
+            const blade = new THREE.Mesh(new THREE.BoxGeometry(5.2*s, 2.6*s, 0.5*s), metalMat);
+            blade.position.set(0, 1.3*s, 2.6*s);
+            blade.name = "blade";
+            blade.castShadow = true;
+            vehicle.add(blade);
+
+            // Escape
+            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.1*s, 0.1*s, 1.5*s), metalMat);
+            exhaust.position.set(0.8*s, 2.5*s, 0.8*s);
+            exhaust.name = "exhaust";
+            vehicle.add(exhaust);
+        }
+
+        // --- SISTEMA DE HUMO Y POLVO ---
+        function spawnParticle(type) {
+            const exhaust = vehicle.getObjectByName("exhaust");
+            if(!exhaust) return;
+            const p = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1, 5, 5),
+                new THREE.MeshBasicMaterial({color: type === 'smoke' ? 0x333333 : 0x887766, transparent: true, opacity: 0.6})
+            );
+            const pos = new THREE.Vector3();
+            if(type === 'smoke') exhaust.getWorldPosition(pos);
+            else { pos.copy(vehicle.position); pos.y = 0.5; }
+           
+            p.position.copy(pos);
+            scene.add(p);
+            particles.push({mesh: p, life: 1.0, type: type});
+        }
+
+        // --- RECURSOS ---
+        const items = [];
+        function spawnItem() {
+            const isWood = Math.random() > 0.45;
+            const geo = isWood ? new THREE.CylinderGeometry(0.6, 0.6, 2.2, 8) : new THREE.DodecahedronGeometry(1.2);
+            const mat = new THREE.MeshStandardMaterial({color: isWood ? 0x5d4037 : 0x777777, roughness: 0.8});
+            const item = new THREE.Mesh(geo, mat);
+            item.position.set((Math.random()-0.5)*600, 1.1, (Math.random()-0.5)*600);
+            if(item.position.distanceTo(workshop.position) < 40) return spawnItem();
+            item.userData = { type: isWood ? 'w' : 's', value: isWood ? 60 : 150 };
+            item.castShadow = true;
+            scene.add(item);
+            items.push(item);
+        }
+        for(let i=0; i<130; i++) spawnItem();
+
+        // --- LÓGICA ---
+        let game = { money: 0, cargo: 0, wood: 0, stone: 0, speed: 0, rot: 0, owned: [true, false, false, false, false] };
+        const keys = {};
+
+        window.onkeydown = (e) => keys[e.key.toLowerCase()] = true;
+        window.onkeyup = (e) => keys[e.key.toLowerCase()] = false;
+
+        function updateUI() {
+            document.getElementById('cash').innerText = Math.floor(game.money);
+            document.getElementById('cargo').innerText = game.cargo;
+            document.getElementById('maxCargo').innerText = VEHICLES[currentIdx].cargo;
+            document.getElementById('w').innerText = game.wood;
+            document.getElementById('s').innerText = game.stone;
+            document.getElementById('modelName').innerText = VEHICLES[currentIdx].name;
+            renderShop();
+        }
+
+        function renderShop() {
+            const catalog = document.getElementById('catalog');
+            catalog.innerHTML = '';
+            VEHICLES.forEach((v, i) => {
+                const card = document.createElement('div');
+                card.className = 'vehicle-card';
+                card.innerHTML = `
+                    <h4>${v.name}</h4>
+                    <p>Equipo pesado de alta gama. Carga máxima: ${v.cargo} tons. Potencia hidráulica optimizada.</p>
+                    <button id="btn-${i}" ${(!game.owned[i] && game.money < v.price) ? 'disabled' : ''}>
+                        ${game.owned[i] ? (currentIdx === i ? 'EQUIPADO' : 'EQUIPAR') : 'COMPRAR $' + v.price}
+                    </button>
+                `;
+                catalog.appendChild(card);
+                const btn = document.getElementById(`btn-${i}`);
+                if(game.owned[i] && currentIdx === i) btn.className = 'owned';
+                btn.onclick = () => {
+                    if(!game.owned[i]) { game.money -= v.price; game.owned[i] = true; }
+                    currentIdx = i; buildVehicle(i); updateUI();
+                };
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const v = VEHICLES[currentIdx];
+
+            // Control
+            if(keys['w'] || keys['arrowup']) game.speed = Math.min(game.speed + 0.007, v.speed);
+            else if(keys['s'] || keys['arrowdown']) game.speed = Math.max(game.speed - 0.007, -v.speed/2);
+            else game.speed *= 0.95;
+
+            if(keys['a'] || keys['arrowleft']) game.rot = 0.04;
+            else if(keys['d'] || keys['arrowright']) game.rot = -0.04;
+            else game.rot *= 0.6;
+
+            vehicle.rotateY(game.rot);
+            vehicle.translateZ(game.speed);
+
+            // Cámara Suave
+            const camOffset = new THREE.Vector3(0, 18 * v.scale, -32 * v.scale).applyMatrix4(vehicle.matrixWorld);
+            camera.position.lerp(camOffset, 0.1);
+            camera.lookAt(vehicle.position.x, vehicle.position.y + 3, vehicle.position.z);
+
+            // Efectos visuales
+            if(Math.random() > 0.85) spawnParticle('smoke');
+            if(Math.abs(game.speed) > 0.1 && Math.random() > 0.8) spawnParticle('dust');
+
+            for(let i=particles.length-1; i>=0; i--){
+                const p = particles[i];
+                p.life -= 0.02;
+                p.mesh.position.y += p.type === 'smoke' ? 0.08 : 0.02;
+                p.mesh.scale.setScalar(1 + (1 - p.life) * 4);
+                p.mesh.material.opacity = p.life;
+                if(p.life <= 0) { scene.remove(p.mesh); particles.splice(i, 1); }
+            }
+
+            // Recoger
+            for(let i=items.length-1; i>=0; i--){
+                if(game.cargo < v.cargo && vehicle.position.distanceTo(items[i].position) < 5 * v.scale){
+                    if(items[i].userData.type === 'w') game.wood++; else game.stone++;
+                    game.cargo++;
+                    scene.remove(items[i]);
+                    items.splice(i, 1);
+                    spawnItem();
+                    updateUI();
+                }
+            }
+
+            // Vender
+            if(game.cargo > 0 && vehicle.position.distanceTo(workshop.position) < 10){
+                const total = (game.wood * 60) + (game.stone * 150);
+                game.money += total;
+                game.cargo = 0; game.wood = 0; game.stone = 0;
+                updateUI();
+                const m = document.getElementById('msg');
+                m.innerText = `MATERIAL VENDIDO: +$${total}`;
+                m.style.color = "#44ff44";
+                setTimeout(() => { m.innerText = "Entra en la caseta para cobrar"; m.style.color = "#fff"; }, 3000);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        buildVehicle(0);
+        updateUI();
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
